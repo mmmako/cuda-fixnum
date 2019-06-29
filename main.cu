@@ -40,6 +40,62 @@ struct mul_and_convert {
   }
 };
 
+template< typename fixnum >
+struct quad_ext {
+    fixnum x;
+    fixnum y;
+};
+
+template< typename fixnum, typename modnum >
+__device__ void quad_ext_add(quad_ext<fixnum> &r,
+        quad_ext<fixnum> a, quad_ext<fixnum> b, modnum mod) {
+    mod.add(r.x, a.x, b.x);
+    mod.add(r.y, a.y, b.y);
+}
+
+template< typename fixnum, typename modnum >
+__device__ void quad_ext_mul(quad_ext<fixnum> &r,
+        quad_ext<fixnum> a, quad_ext<fixnum> b, modnum mod, fixnum non_residue) {
+    fixnum axbx;
+    fixnum ayby;
+    fixnum axby;
+    fixnum aybx;
+    fixnum aybynr;
+
+    mod.mul(axbx, a.x, b.x);
+    mod.mul(ayby, a.y, b.y);
+    mod.mul(axby, a.x, b.y);
+    mod.mul(aybx, a.y, b.x);
+    mod.mul(aybynr, ayby, non_residue);
+
+    mod.add(r.x, axbx, aybynr);
+    mod.add(r.y, aybx, axby);
+}
+
+template< typename fixnum>
+struct mul_quad_ext_and_convert {
+    typedef modnum_monty_cios<fixnum> modnum;
+    __device__ void operator()(fixnum &r1, fixnum &r2, fixnum a1, fixnum a2, fixnum b1, fixnum b2, fixnum my_mod) {
+        fixnum non_residue = (fixnum)13;
+        typedef quad_ext<fixnum> qext;
+        modnum mod = modnum(my_mod);
+
+        qext sm;
+
+        qext am;
+        qext bm;
+        mod.to_modnum(am.x, a1);
+        mod.to_modnum(am.y, a2);
+        mod.to_modnum(bm.x, b1);
+        mod.to_modnum(bm.y, b2);
+
+        quad_ext_mul(sm, am, bm, mod, non_residue);
+
+        mod.from_modnum(r1, sm.x);
+        mod.from_modnum(r2, sm.y);
+    }
+};
+
 template< int fn_bytes, typename fixnum_array >
 void print_fixnum_array(fixnum_array* res, int nelts) {
     int lrl = fn_bytes*nelts;
@@ -78,20 +134,30 @@ vector<uint8_t*> get_fixnum_array(fixnum_array* res, int nelts) {
 
 
 template< int fn_bytes, typename word_fixnum, template <typename> class Func >
-std::vector<uint8_t*> compute_product(std::vector<uint8_t*> a, std::vector<uint8_t*> b, uint8_t* input_m_base) {
+std::pair<std::vector<uint8_t*>, std::vector<uint8_t*>> compute_product(std::vector<uint8_t*> a0, std::vector<uint8_t*> a1, std::vector<uint8_t*> b0, std::vector<uint8_t*> b1, uint8_t* input_m_base) {
     typedef warp_fixnum<fn_bytes, word_fixnum> fixnum;
     typedef fixnum_array<fixnum> fixnum_array;
 
-    int nelts = a.size();
+    int nelts = a0.size();
 
-    uint8_t *input_a = new uint8_t[fn_bytes * nelts];
+    uint8_t *input_a0 = new uint8_t[fn_bytes * nelts];
     for (int i = 0; i < fn_bytes * nelts; ++i) {
-      input_a[i] = a[i/fn_bytes][i%fn_bytes];
+      input_a0[i] = a0[i/fn_bytes][i%fn_bytes];
     }
 
-    uint8_t *input_b = new uint8_t[fn_bytes * nelts];
+    uint8_t *input_a1 = new uint8_t[fn_bytes * nelts];
     for (int i = 0; i < fn_bytes * nelts; ++i) {
-      input_b[i] = b[i/fn_bytes][i%fn_bytes];
+      input_a1[i] = a1[i/fn_bytes][i%fn_bytes];
+    }
+
+    uint8_t *input_b0 = new uint8_t[fn_bytes * nelts];
+    for (int i = 0; i < fn_bytes * nelts; ++i) {
+      input_b0[i] = b0[i/fn_bytes][i%fn_bytes];
+    }
+
+    uint8_t *input_b1 = new uint8_t[fn_bytes * nelts];
+    for (int i = 0; i < fn_bytes * nelts; ++i) {
+      input_b1[i] = b1[i/fn_bytes][i%fn_bytes];
     }
 
     uint8_t *input_m = new uint8_t[fn_bytes * nelts];
@@ -100,26 +166,35 @@ std::vector<uint8_t*> compute_product(std::vector<uint8_t*> a, std::vector<uint8
     }
 
     // TODO reuse modulus as a constant instead of passing in nelts times
-    fixnum_array *res, *in_a, *in_b, *inM;
-    in_a = fixnum_array::create(input_a, fn_bytes * nelts, fn_bytes);
-    in_b = fixnum_array::create(input_b, fn_bytes * nelts, fn_bytes);
+    fixnum_array *res0, *res1, *in_a0, *in_a1, *in_b0, *in_b1, *inM;
+    in_a0 = fixnum_array::create(input_a0, fn_bytes * nelts, fn_bytes);
+    in_a1 = fixnum_array::create(input_a1, fn_bytes * nelts, fn_bytes);
+    in_b0 = fixnum_array::create(input_b0, fn_bytes * nelts, fn_bytes);
+    in_b1 = fixnum_array::create(input_b1, fn_bytes * nelts, fn_bytes);
     inM = fixnum_array::create(input_m, fn_bytes * nelts, fn_bytes);
-    res = fixnum_array::create(nelts);
+    res0 = fixnum_array::create(nelts);
+    res1 = fixnum_array::create(nelts);
 
-    fixnum_array::template map<Func>(res, in_a, in_b, inM);
+    fixnum_array::template map<Func>(res0, res1, in_a0, in_a1, in_b0, in_b1, inM);
 
-    vector<uint8_t*> v_res = get_fixnum_array<fn_bytes, fixnum_array>(res, nelts);
+    vector<uint8_t*> v_res0 = get_fixnum_array<fn_bytes, fixnum_array>(res0, nelts);
+    vector<uint8_t*> v_res1 = get_fixnum_array<fn_bytes, fixnum_array>(res1, nelts);
 
     //TODO to do stage 1 field arithmetic, instead of a map, do a reduce
 
-    delete in_a;
-    delete in_b;
+    delete in_a0;
+    delete in_a1;
+    delete in_b0;
+    delete in_b1;
     delete inM;
-    delete res;
-    delete[] input_a;
-    delete[] input_b;
+    delete res0;
+    delete res1;
+    delete[] input_a0;
+    delete[] input_a1;
+    delete[] input_b0;
+    delete[] input_b1;
     delete[] input_m;
-    return v_res;
+    return std::make_pair(v_res0, v_res1);
 }
 
 uint8_t* read_mnt_fq(FILE* inputs) {
@@ -159,44 +234,40 @@ int main(int argc, char* argv[]) {
     if (elts_read == 0) { break; }
 
     std::vector<uint8_t*> x0;
-    for (size_t i = 0; i < n; ++i) {
-      x0.emplace_back(read_mnt_fq(inputs));
-    }
-
     std::vector<uint8_t*> x1;
     for (size_t i = 0; i < n; ++i) {
+      x0.emplace_back(read_mnt_fq(inputs));
       x1.emplace_back(read_mnt_fq(inputs));
     }
-
-    std::vector<uint8_t*> res_x = compute_product<bytes_per_elem, u64_fixnum, mul_and_convert>(x0, x1, mnt4_modulus);
-
-    for (size_t i = 0; i < n; ++i) {
-      write_mnt_fq(res_x[i], outputs);
-    }
-
     std::vector<uint8_t*> y0;
-    for (size_t i = 0; i < n; ++i) {
-      y0.emplace_back(read_mnt_fq(inputs));
-    }
-
     std::vector<uint8_t*> y1;
     for (size_t i = 0; i < n; ++i) {
+      y0.emplace_back(read_mnt_fq(inputs));
       y1.emplace_back(read_mnt_fq(inputs));
     }
 
-    std::vector<uint8_t*> res_y = compute_product<bytes_per_elem, u64_fixnum, mul_and_convert>(y0, y1, mnt6_modulus);
+    //std::vector<uint8_t*> res_x = compute_product<bytes_per_elem, u64_fixnum, mul_and_convert>(x0, x1, mnt4_modulus);
+    std::pair<std::vector<uint8_t*>, std::vector<uint8_t*>> res = compute_product<bytes_per_elem, u64_fixnum, mul_quad_ext_and_convert>(x0, x1, y0, y1, mnt4_modulus);
 
     for (size_t i = 0; i < n; ++i) {
-      write_mnt_fq(res_y[i], outputs);
+      write_mnt_fq(res.first[i], outputs);
+      write_mnt_fq(res.second[i], outputs);
     }
+
+    //std::vector<uint8_t*> res_y = compute_product<bytes_per_elem, u64_fixnum, mul_and_convert>(y0, y1, mnt6_modulus);
+
+    //for (size_t i = 0; i < n; ++i) {
+    //  write_mnt_fq(res_y[i], outputs);
+    //}
 
     for (size_t i = 0; i < n; ++i) {
       free(x0[i]);
       free(x1[i]);
-      free(y0[i]);
-      free(y1[i]);
-      free(res_x[i]);
-      free(res_y[i]);
+      //free(y0[i]);
+      //free(y1[i]);
+      free(res.first[i]);
+      free(res.second[i]);
+      //free(res_y[i]);
     }
   }
 
