@@ -17,29 +17,6 @@ const unsigned int io_bytes_per_elem = 96;
 using namespace std;
 using namespace cuFIXNUM;
 
-template< typename fixnum >
-struct mul_and_convert {
-  // redc may be worth trying over cios
-  typedef modnum_monty_cios<fixnum> modnum;
-  __device__ void operator()(fixnum &r, fixnum a, fixnum b, fixnum my_mod) {
-      modnum mod = modnum(my_mod);
-
-      fixnum sm;
-
-      fixnum am;
-      fixnum bm;
-      mod.to_modnum(am, a);
-      mod.to_modnum(bm, b);
-
-      mod.mul(sm, am, bm);
-
-      fixnum s;
-      mod.from_modnum(s, sm);
-
-      r = s;
-  }
-};
-
 template< typename fixnum, typename modnum>
 __device__ void mul_quad(fixnum &r0, fixnum &r1, fixnum a0, fixnum a1, fixnum b0, fixnum b1, modnum mod, fixnum non_residue) {
     fixnum a0b0, a1b1, a1b1nr;
@@ -112,7 +89,8 @@ void print_fixnum_array(fixnum_array* res, int nelts) {
 template< int fn_bytes, typename fixnum_array >
 vector<uint8_t*> get_fixnum_array(fixnum_array* res, int nelts) {
     int lrl = fn_bytes*nelts;
-    uint8_t local_results[lrl];
+    //uint8_t local_results[lrl];
+    uint8_t* local_results = new uint8_t[lrl];
     int ret_nelts;
     for (int i = 0; i < lrl; i++) {
       local_results[i] = 0;
@@ -126,6 +104,7 @@ vector<uint8_t*> get_fixnum_array(fixnum_array* res, int nelts) {
       }
       res_v.emplace_back(a);
     }
+    delete[](local_results);
     return res_v;
 }
 
