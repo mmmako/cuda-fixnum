@@ -19,23 +19,32 @@ using namespace cuFIXNUM;
 
 template< typename fixnum, typename modnum>
 __device__ void mul_quad(fixnum &r0, fixnum &r1, fixnum a0, fixnum a1, fixnum b0, fixnum b1, modnum mod, fixnum non_residue) {
-    fixnum a0b0, a1b1, a1b1nr;
+    //fixnum a0b0, a1b1, a1b1nr;
 
+    //mod.mul(a0b0, a0, b0);
+    //mod.mul(a1b1, a1, b1);
+    //mod.mul(a1b1nr, a1b1, non_residue);
+
+    //fixnum a0pb0, a1pb1;
+    //mod.add(a0pb0, a0, b0);
+    //mod.add(a1pb1, a1, b1);
+
+    //fixnum prod, sub1;
+    //mod.mul(prod, a0pb0, a1pb1);
+    //mod.sub(sub1, prod, a0b0);
+
+    fixnum a0b0, a0b1, a1b0, a1b1, a1b1nr;
     mod.mul(a0b0, a0, b0);
+    mod.mul(a0b1, a0, b1);
+    mod.mul(a1b0, a1, b0);
     mod.mul(a1b1, a1, b1);
     mod.mul(a1b1nr, a1b1, non_residue);
 
-    fixnum a0pb0, a1pb1;
-    mod.add(a0pb0, a0, b0);
-    mod.add(a1pb1, a1, b1);
-
-    fixnum prod, sub1;
-    mod.mul(prod, a0pb0, a1pb1);
-    mod.sub(sub1, prod, a0b0);
-
     fixnum s0, s1;
+    //mod.add(s0, a0b0, a1b1nr);
+    //mod.sub(s1, sub1, a1b1);
     mod.add(s0, a0b0, a1b1nr);
-    mod.sub(s1, sub1, a1b1);
+    mod.add(s1, a0b1, a1b0);
 
     r0 = s0;
     r1 = s1;
