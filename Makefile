@@ -1,5 +1,5 @@
 CXX ?= g++
-GENCODES ?= 60
+GENCODES ?= 75
 
 INCLUDE_DIRS = -I./src
 NVCC_FLAGS = -ccbin $(CXX) -std=c++11 -Xcompiler -Wall,-Wextra
