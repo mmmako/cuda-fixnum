@@ -64,62 +64,6 @@ struct mul_quad_and_convert {
   }
 };
 
-template< typename fixnum >
-struct quad_ext {
-    fixnum x;
-    fixnum y;
-};
-
-template< typename fixnum, typename modnum >
-__device__ void quad_ext_add(quad_ext<fixnum> &r,
-        quad_ext<fixnum> a, quad_ext<fixnum> b, modnum mod) {
-    mod.add(r.x, a.x, b.x);
-    mod.add(r.y, a.y, b.y);
-}
-
-template< typename fixnum, typename modnum >
-__device__ void quad_ext_mul(quad_ext<fixnum> &r,
-        quad_ext<fixnum> a, quad_ext<fixnum> b, modnum mod, fixnum non_residue) {
-    fixnum axbx;
-    fixnum ayby;
-    fixnum axby;
-    fixnum aybx;
-    fixnum aybynr;
-
-    mod.mul(axbx, a.x, b.x);
-    mod.mul(ayby, a.y, b.y);
-    mod.mul(axby, a.x, b.y);
-    mod.mul(aybx, a.y, b.x);
-    mod.mul(aybynr, ayby, non_residue);
-
-    mod.add(r.x, axbx, aybynr);
-    mod.add(r.y, aybx, axby);
-}
-
-template< typename fixnum>
-struct mul_quad_ext_and_convert {
-    typedef modnum_monty_cios<fixnum> modnum;
-    __device__ void operator()(fixnum &r1, fixnum &r2, fixnum a1, fixnum a2, fixnum b1, fixnum b2, fixnum my_mod) {
-        fixnum non_residue = (fixnum)13;
-        typedef quad_ext<fixnum> qext;
-        modnum mod = modnum(my_mod);
-
-        qext sm;
-
-        qext am;
-        qext bm;
-        mod.to_modnum(am.x, a1);
-        mod.to_modnum(am.y, a2);
-        mod.to_modnum(bm.x, b1);
-        mod.to_modnum(bm.y, b2);
-
-        quad_ext_mul(sm, am, bm, mod, non_residue);
-
-        mod.from_modnum(r1, sm.x);
-        mod.from_modnum(r2, sm.y);
-    }
-};
-
 template< int fn_bytes, typename fixnum_array >
 void print_fixnum_array(fixnum_array* res, int nelts) {
     int lrl = fn_bytes*nelts;
@@ -154,7 +98,7 @@ vector<uint8_t*> get_fixnum_array(fixnum_array* res, int nelts) {
       }
       res_v.emplace_back(a);
     }
-    delete[](local_results);
+    delete[] local_results;
     return res_v;
 }
 
@@ -212,6 +156,7 @@ std::pair<std::vector<uint8_t*>, std::vector<uint8_t*>> compute_product(std::vec
     delete in_b0;
     delete in_b1;
     delete inM;
+    delete inNR;
     delete res0;
     delete res1;
     delete[] input_a0;
@@ -219,6 +164,7 @@ std::pair<std::vector<uint8_t*>, std::vector<uint8_t*>> compute_product(std::vec
     delete[] input_b0;
     delete[] input_b1;
     delete[] input_m;
+    delete[] input_nr;
     return std::make_pair(v_res0, v_res1);
 }
 
